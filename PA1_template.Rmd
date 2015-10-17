@@ -1,25 +1,199 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
----
+Reproducible Research, Peer Assessment 1      
+Coursera, October 2015      
+Ken Gosier
 
+Begin by setting echo=TRUE, and results as "asis"
+globally for the document
+
+```{r setoptions,echo=TRUE}
+opts_chunk$set(echo = TRUE, results="asis")
+```
 
 ## Loading and preprocessing the data
 
+Here I unzip the file if necessary, and read in the
+data through read.csv. Convert steps and interval to integer,
+and the date column to type Date. Leave missing data in the
+data frame for now.
 
+```{r}
+zipfile <- "activity.zip"
+unzipfile <- "activity.csv"
+
+if (!file.exists(unzipfile)) {
+    unzip(zipfile, overwrite = TRUE)
+}
+
+data <- read.csv(unzipfile, header = TRUE,
+    stringsAsFactors = FALSE)
+data$steps <- as.integer(data$steps)
+data$date <- as.Date(data$date, format="%Y-%m-%d")
+data$interval <- as.integer(data$interval)
+```
 
 ## What is mean total number of steps taken per day?
 
+Here I aggregate the total number of steps taken each day.
+NA's are ignored, effectively treating those intervals
+as if no steps had been during those intervals, since they
+will not contribute to the sum.
 
+```{r}
+aggbydate <- aggregate(data$steps, by = list(date = data$date),
+    FUN = sum, na.rm = TRUE)
+colnames(aggbydate) <- c("date", "total_steps")
+```
+
+Make a histogram. R's barplot command produced the wrong
+output. It showed the total number of steps for each
+day, rather than aggregating the frequency of steps across
+the days, as hist does. I show 10 breaks in the histogram.
+
+```{r}
+hist(aggbydate$total_steps, xlab = "Total Steps per day",
+    breaks = 10, main = "Histogram, Total Steps per day")
+```
+
+The mean of steps per day:
+
+```{r}
+mean(aggbydate$total_steps)
+```
+
+The median of steps per day:
+
+
+```{r}
+median(aggbydate$total_steps)
+
+```
 
 ## What is the average daily activity pattern?
 
+Take the average by interval across all days. At this point
+we are still ignoring the NA's.
 
+```{r}
+aggbyinterval <- aggregate(data$steps, by = list(date = data$interval),
+    FUN = mean, na.rm = TRUE)
+colnames(aggbyinterval) <- c("interval", "average_steps")
+```
+
+Show a plot of average steps vs interval.
+
+```{r}
+plot(aggbyinterval$interval, aggbyinterval$average_steps, type = "l",
+    xlab = "interval", ylab = "average_steps")
+```
+
+The index of the interval with the highest average steps.
+
+```{r}
+maxind <- which.max(aggbyinterval$average_steps)
+maxind
+```
+
+The interval with the highest average steps.
+
+```{r}
+aggbyinterval$interval[maxind]
+
+```
+
+The number of steps in the max interval.
+
+```{r}
+aggbyinterval$average_steps[maxind]
+```
 
 ## Imputing missing values
 
+First calculating the total number of rows with missing values
+in the dataset.
 
+```{r}
+length(which(is.na(data$steps)))
+```
+
+Replace missing values with the average value for that interval
+across all the days. This is an over-simple way to fill in
+the missing values.
+
+It would be nice to do this replacement all in one statement
+rather than a for loop, may look into lapply in the future.
+
+```{r}
+data.nona <- data
+for (i in 1:nrow(aggbyinterval)) {
+    thisint <- aggbyinterval$interval[i]
+    thismean <- aggbyinterval$average_steps[i]
+    thissubs <- which(is.na(data.nona$steps) & data.nona$interval == thisint)
+    data.nona$steps[thissubs] <- thismean
+}
+```
+
+Aggregate data.nona by total steps per day, and make a histogram.
+
+```{r}
+aggbydate.nona <- aggregate(data.nona$steps, by = list(date = data.nona$date),
+    FUN = sum)
+colnames(aggbydate.nona) <- c("date", "total_steps")
+hist(aggbydate.nona$total_steps, xlab = "Total Steps per day",
+    breaks = 10, main = "Histogram, NA's replaced by interval mean")
+```
+
+Computing the mean and median of steps per day with the NA's replaced.
+
+```{r}
+mean(aggbydate.nona$total_steps)
+```
+
+```{r}
+median(aggbydate.nona$total_steps)
+```
+
+Both have increased from their previous values. This makes sense -- with
+the NA's remove from the sums, those intervals were essentially treated
+as if they had 0 steps. We have replaced these values with the average of
+steps for the interval, so the mean and median must increase.
+
+It can be seen the bin with 10,766 steps grows. There were several days with
+NA listed for all the intervals. These all got moved from the left of the
+histogram to the middle bin. In general the histogram moves a little to the
+right -- any NA was previously effectively treated as 0, since it did
+not contribute to the sum. Now there is a nonzero value in most cases
+to add into the sum.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+Create a factor which tells whether each day was a weekday or weekend.
+
+```{r}
+wdayvec <- character(nrow(data.nona))
+wdayvec[1:length(wdayvec)] <- "weekday"
+data.weekdays <- weekdays(data.nona$date)
+wdayvec[which(data.weekdays == "Saturday" | data.weekdays == "Sunday")] = "weekend"
+data.nona$weekend_indic <- as.factor(wdayvec)
+```
+
+Average data by weekend indicator and interval, and make a panel plot
+showing average steps per interval through the day for weekends and
+weekdays.
+
+```{r}
+aggbyinterval.weekday <- aggregate(data.nona$steps,
+    by = list(interval = data.nona$interval, weekend_indic = data.nona$weekend_indic),
+    FUN = mean, na.rm = TRUE)
+colnames(aggbyinterval.weekday) <- c("interval", "weekend_indic", "average_steps")
+library(lattice)
+xyplot(average_steps ~ interval | factor(weekend_indic),
+    data = aggbyinterval.weekday,
+    type = "l",
+    xlab = "interval",
+    ylab = "Number of steps",
+    layout = c(1,2))
+```
+
+Just as an observation, the weekday days show more activity in the hours before
+work starts at 9am, around lunchtime, around a mid-afternoon snack at 3pm, and
+in the hours immediately after 5pm. The weekend steps are more spread out.
